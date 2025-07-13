@@ -1,0 +1,88 @@
+# Importing necessary libraries
+from sklearn import datasets
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from scipy.stats import uniform, randint
+import pandas as pd
+
+# Load dataset
+data = datasets.load_wine()
+X, y = data.data, data.target
+
+# Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Define models
+models = {
+    'SVM': SVC(),
+    'RandomForest': RandomForestClassifier(),
+    'LogisticRegression': LogisticRegression(max_iter=1000)
+}
+
+# Baseline evaluation
+baseline_results = []
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    yp = model.predict(X_test)
+    baseline_results.append({
+        'Model': name,
+        'Accuracy': accuracy_score(y_test, yp),
+        'Precision': precision_score(y_test, yp, average='macro'),
+        'Recall': recall_score(y_test, yp, average='macro'),
+        'F1-Score': f1_score(y_test, yp, average='macro')
+    })
+
+# Hyperparameter grids for GridSearchCV
+param_grids = {
+    'SVM': {'C': [0.1, 1, 10], 'kernel': ['linear', 'rbf'], 'gamma': ['scale', 'auto']},
+    'RandomForest': {'n_estimators': [50, 100], 'max_depth': [None, 10, 20]},
+    'LogisticRegression': {'C': [0.01, 0.1, 1, 10]}
+}
+
+# GridSearchCV tuning
+grid_results = {}
+for name in models:
+    gs = GridSearchCV(models[name], param_grids[name], cv=5, scoring='accuracy')
+    gs.fit(X_train, y_train)
+    grid_results[name] = gs
+
+# Hyperparameter distributions for RandomizedSearchCV
+param_dists = {
+    'SVM': {'C': uniform(0.1, 10), 'kernel': ['linear', 'rbf'], 'gamma': uniform(0.01, 1)},
+    'RandomForest': {'n_estimators': randint(50, 200), 'max_depth': [None, 10, 20, 30]},
+    'LogisticRegression': {'C': uniform(0.01, 10)}
+}
+
+# RandomizedSearchCV tuning
+rand_results = {}
+for name in models:
+    rs = RandomizedSearchCV(models[name], param_dists[name], n_iter=20, cv=5,
+                            scoring='accuracy', random_state=42)
+    rs.fit(X_train, y_train)
+    rand_results[name] = rs
+
+# Final model evaluation
+final_results = []
+for name in models:
+    best_model = rand_results[name].best_estimator_ \
+        if rand_results[name].best_score_ >= grid_results[name].best_score_ \
+        else grid_results[name].best_estimator_
+    yp = best_model.predict(X_test)
+    final_results.append({
+        'Model': name,
+        'Best Method': 'RandomizedSearchCV' if rand_results[name].best_score_ >= grid_results[name].best_score_ else 'GridSearchCV',
+        'Accuracy': accuracy_score(y_test, yp),
+        'Precision': precision_score(y_test, yp, average='macro'),
+        'Recall': recall_score(y_test, yp, average='macro'),
+        'F1-Score': f1_score(y_test, yp, average='macro')
+    })
+
+# Display Results
+baseline_df = pd.DataFrame(baseline_results)
+final_df = pd.DataFrame(final_results)
+
+print("🔹 Baseline Results:\n", baseline_df)
+print("\n🔸 Final Results After Tuning:\n", final_df)
