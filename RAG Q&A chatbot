@@ -1,0 +1,37 @@
+from transformers import pipeline
+from sentence_transformers import SentenceTransformer
+import pandas as pd
+import faiss
+import numpy as np
+
+# Load and preprocess the data
+df = pd.read_csv('Training Dataset.csv')
+df = df.fillna('N/A')
+documents = df.astype(str).apply(lambda row: ' | '.join(row), axis=1).tolist()
+
+# Embedding model
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
+doc_embeddings = embedder.encode(documents, convert_to_tensor=False)
+
+# Create FAISS index
+dimension = doc_embeddings[0].shape[0]
+index = faiss.IndexFlatL2(dimension)
+index.add(np.array(doc_embeddings))
+
+# Question from user
+query = "What are the common reasons for loan rejection?"
+
+# Embed query and retrieve top results
+query_embedding = embedder.encode([query])[0]
+D, I = index.search(np.array([query_embedding]), k=3)
+top_docs = [documents[i] for i in I[0]]
+
+# Combine retrieved context
+context = "\n".join(top_docs)
+
+# Generative model
+generator = pipeline("text2text-generation", model="google/flan-t5-base")
+prompt = f"Answer the question based on the context:\n{context}\n\nQuestion: {query}\nAnswer:"
+response = generator(prompt, max_length=200)
+
+print("Response:", response[0]['generated_text'])
